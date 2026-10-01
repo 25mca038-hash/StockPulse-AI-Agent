@@ -6,7 +6,10 @@ const app = express()
 
 app.use(
   cors({
-    origin: 'http://localhost:5173'
+    origin: [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173'
+    ]
   })
 )
 
@@ -259,9 +262,12 @@ function parsePlannerResponse(
 async function chooseAgentTool(
   question: string
 ) {
-  const response = await fetch(
-    'https://integrate.api.nvidia.com/v1/chat/completions',
-    {
+  let response: Response
+
+  try {
+    response = await fetch(
+      'https://integrate.api.nvidia.com/v1/chat/completions',
+      {
       method: 'POST',
 
       headers: {
@@ -395,8 +401,62 @@ Use the exact product name whenever possible.
 
         stream: false
       })
+      }
+    )
+  } catch (error) {
+    console.error(
+      'Agent planner unavailable; using local command parsing:',
+      error
+    )
+
+    const lowerQuestion =
+      question.toLowerCase()
+
+    const productName =
+      lowerQuestion.includes('mouse')
+        ? 'Mouse'
+        : lowerQuestion.includes('keyboard')
+        ? 'Keyboard'
+        : lowerQuestion.includes('laptop')
+        ? 'Laptop'
+        : lowerQuestion.includes('monitor')
+        ? 'Monitor'
+        : lowerQuestion.includes('usb cable')
+        ? 'USB Cable'
+        : ''
+
+    const numberMatch =
+      lowerQuestion.match(/\d+/)
+
+    if (
+      productName &&
+      numberMatch &&
+      (lowerQuestion.includes('add') ||
+        lowerQuestion.includes('increase') ||
+        lowerQuestion.includes('remove') ||
+        lowerQuestion.includes('decrease'))
+    ) {
+      const number = Number(numberMatch[0])
+
+      return {
+        tool: 'update_stock',
+        productName,
+        quantity:
+          lowerQuestion.includes('remove') ||
+          lowerQuestion.includes('decrease')
+            ? -number
+            : number,
+        reason:
+          'Handled locally because the AI planner is unavailable.'
+      }
     }
-  )
+
+    return {
+      tool: 'check_inventory',
+      reason:
+        'Handled locally because the AI planner is unavailable.'
+    }
+  }
 
   if (!response.ok) {
     const errorText =
@@ -649,8 +709,10 @@ app.post(
         const inventoryResult =
           checkInventory(inventory)
 
-        const analysisResponse =
-          await fetch(
+        let analysisResponse: Response | null = null
+
+        try {
+          analysisResponse = await fetch(
             'https://integrate.api.nvidia.com/v1/chat/completions',
             {
               method: 'POST',
@@ -713,8 +775,14 @@ ${JSON.stringify(
               })
             }
           )
+        } catch (error) {
+          console.error(
+            'AI explanation unavailable; returning stock update:',
+            error
+          )
+        }
 
-        if (!analysisResponse.ok) {
+        if (!analysisResponse || !analysisResponse.ok) {
           return res.status(500).json({
             error:
               'Agent analysis failed.'
