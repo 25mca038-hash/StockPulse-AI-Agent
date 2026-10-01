@@ -275,7 +275,7 @@ function AIAgentPanel({
 
       const result =
         await fetch(
-          'http://127.0.0.1:3000/api/agent',
+          '/api/agent',
           {
             method: 'POST',
 
@@ -406,7 +406,7 @@ function AIAgentPanel({
         </div>
 
         <div className="ai-agent-badge">
-          AI AGENT
+          🦜 LangChain Agent
         </div>
 
       </div>
